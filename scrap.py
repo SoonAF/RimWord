@@ -14,7 +14,20 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 temp_data = []
 
 # ================= 配置区域 =================
-API_KEY = ""       # 替换这里
+# 从文件读取 API key
+try:
+    with open('steam_web_api_key.txt', 'r', encoding='utf-8') as f:
+        API_KEY = f.read().strip()
+    if not API_KEY:
+        print("错误: steam_web_api_key.txt 文件为空")
+        print("请前往 https://steamcommunity.com/dev/apikey 获取 API key 并添加到该文件中")
+        input("回车退出...")
+        sys.exit(1)
+except FileNotFoundError:
+    print("错误: 未找到 steam_web_api_key.txt 文件")
+    print("请前往 https://steamcommunity.com/dev/apikey 获取 API key 并创建该文件")
+    input("回车退出...")
+    sys.exit(1)
 APP_ID = 294100                      # 替换这里 (例如 Wallpaper Engine)
 
 # 筛选条件
@@ -120,7 +133,16 @@ def signal_handler(sig, frame):
 def make_request(url, params, timeout=15):
     """带重试的网络请求函数"""
     response = requests.get(url, params=params, timeout=timeout, verify=False)
-    response.raise_for_status()  # 如果状态码不是200会抛出异常
+    try:
+        response.raise_for_status()  # 如果状态码不是200会抛出异常
+    except requests.exceptions.HTTPError as e:
+        if response.status_code == 403:
+            print("错误: 403 Forbidden")
+            print("API key 可能无效或已过期？")
+            print("请检查 steam_web_api_key.txt 文件中的 API key 是否正确")
+            print("如果需要，请前往 https://steamcommunity.com/dev/apikey 重新获取")
+            input("回车退出...")
+        raise
     return response.json()
 
 def save_progress_data(data, page_num):
