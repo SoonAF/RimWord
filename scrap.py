@@ -153,6 +153,7 @@ def fetch_clean_workshop_data(api_key, app_id, required_tags=None, excluded_tags
             'numperpage': 100,
             'query_type': query_type,
             'return_children' : 1,
+            'match_all_tags' : 0,
             
             # 开启详细数据返回，以便获取统计数据和标签
             'return_vote_data': 1, 
@@ -275,8 +276,7 @@ if __name__ == "__main__":
             required_tags=TARGET_TAGS, 
             excluded_tags=EXCLUDED_TAGS, 
             query_type=QUERY_TYPE, 
-            max_pages=MAX_PAGES,
-            match_all_tags=False
+            max_pages=MAX_PAGES
         )
         
         # 确保输出文件夹存在
