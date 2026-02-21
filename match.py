@@ -56,6 +56,7 @@ def process_chunk_items(items, dependency_map):
         trans_info = {
             'id': str(item.get('publishedfileid')), # 统一转为字符串
             'title': title,
+            'tags': item.get('tags', []),
             'updated': item.get('time_updated', 0),
             'subs': item.get('subscriptions', 0),
             'score': item.get('vote_data', {}).get('score', 0)
@@ -71,19 +72,6 @@ def process_chunk_items(items, dependency_map):
             
             # 将汉化信息加入列表 (此处暂不去重，保留所有候选)
             dependency_map[parent_id].append(trans_info)
-
-def sort_and_clean_map(dependency_map):
-    """
-    对最终结果进行整理：
-    1. 按更新时间和订阅量排序 (最新的在前)
-    2. 去重 (可选，如果不同分块有重复数据)
-    """
-    print("正在对结果进行排序...")
-    for parent_id, candidates in dependency_map.items():
-        # 排序逻辑：优先按更新时间倒序，其次按订阅量倒序
-        # 这样列表第一个元素通常就是最佳汉化
-        candidates.sort(key=lambda x: (x['updated'], x['subs']), reverse=True)
-    return dependency_map
 
 def main():
     # 结果字典: { '原版ModID': [汉化包Info1, 汉化包Info2, ...] }
@@ -115,9 +103,6 @@ def main():
                     
         except Exception as e:
             print(f"读取 {file_path} 时出错: {e}")
-
-    # 排序整理
-    sort_and_clean_map(global_map)
 
     # 统计信息
     original_mod_count = len(global_map)
