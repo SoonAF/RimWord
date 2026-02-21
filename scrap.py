@@ -24,10 +24,31 @@ try:
         input("回车退出...")
         sys.exit(1)
 except FileNotFoundError:
-    print("错误: 未找到 steam_web_api_key.txt 文件")
-    print("请前往 https://steamcommunity.com/dev/apikey 获取 API key 并创建该文件")
-    input("回车退出...")
-    sys.exit(1)
+    print("未找到 steam_web_api_key.txt 文件")
+    print("正在创建 steam_web_api_key.txt 文件...")
+    
+    print("\n请按照以下步骤获取 Steam Web API Key:")
+    print("1. 打开浏览器，访问 https://steamcommunity.com/dev/apikey")
+    print("2. 登录您的 Steam 账号")
+    print("3. 在域名字段中输入任意名称（例如 'localhost'）")
+    print("4. 勾选同意条款，然后点击注册按钮")
+    print("5. 复制生成的 API Key")
+    print("6. 在此处粘贴您的 API Key 并按回车键")
+    
+    # 让用户在命令行中输入 API Key
+    api_key_input = input("\n请粘贴您的 Steam Web API Key: ").strip()
+    
+    if not api_key_input:
+        print("错误: API Key 不能为空")
+        input("回车退出...")
+        sys.exit(1)
+    
+    # 将 API Key 写入文件
+    with open('steam_web_api_key.txt', 'w', encoding='utf-8') as f:
+        f.write(api_key_input)
+    
+    print("\nAPI Key 已成功保存到 steam_web_api_key.txt 文件中")
+    API_KEY = api_key_input
 APP_ID = 294100                      # 替换这里 (例如 Wallpaper Engine)
 
 # 筛选条件
@@ -138,7 +159,7 @@ def make_request(url, params, timeout=15):
     except requests.exceptions.HTTPError as e:
         if response.status_code == 403:
             print("错误: 403 Forbidden")
-            print("API key 可能无效或已过期？")
+            print("可能是API key无效？")
             print("请检查 steam_web_api_key.txt 文件中的 API key 是否正确")
             print("如果需要，请前往 https://steamcommunity.com/dev/apikey 重新获取")
             input("回车退出...")
