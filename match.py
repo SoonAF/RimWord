@@ -4,80 +4,83 @@ import os
 import glob
 
 # ================= 配置区域 =================
-# 输入文件夹路径 (存放分块json的文件夹)
 INPUT_FOLDER = './output' 
-
-# 输出文件路径
 OUTPUT_FILE = 'translation_map.json'
 
-# 关键词正则，匹配标题中包含汉化意图的词
-CN_PATTERN = re.compile(r'(汉化|中文|Chinese|CN|ZH|简体|繁体)', re.IGNORECASE)
+# 关键词正则：匹配标题中包含汉化意图的词
+CN_PATTERN = re.compile(r'(汉|漢|中|Chinese|\bCN\b|\bZH\b|\bTW\b|\bHK\b|\bCH\b|\bTC\b|简|繁|simplified|traditional)', re.IGNORECASE)
 
 # ================= 核心逻辑 =================
 
-def is_valid_translation(item):
+def is_translation_mod(title, tags):
     """
-    判断一个项目是否为汉化包：
-    1. tags 中必须包含 "Translation"
-    2. title 中必须包含中文相关关键词
+    判断是否为汉化包
+    条件：Tag包含 'Translation' 且 标题包含中文关键词
     """
-    # 1. 检查 Tags (必须包含 "Translation")
-    tags = item.get('tags', [])
-    if not isinstance(tags, list):
+    if not tags or not isinstance(tags, list):
         return False
     
-    # 将所有 tag 转为小写进行比对
-    has_translation_tag = any(tag.lower() == 'translation' for tag in tags)
-    if not has_translation_tag:
+    # 1. 检查 Tags
+    tag_set = {t.lower() for t in tags}
+    if 'translation' not in tag_set:
         return False
-    # 2. 检查标题 (必须包含中文关键词)
-    title = item.get('title', '')
-    if not CN_PATTERN.search(title):
+
+    # 2. 检查标题
+    if not title or not CN_PATTERN.search(title):
         return False
+    
     return True
 
-def process_chunk_items(items, dependency_map):
+def process_chunk_items(items, ref_map, relation_map):
     """
-    处理单个分块文件的数据，并将结果更新到 dependency_map 中
+    处理分块数据
+    ref_map:      存储所有Mod的基础信息 (ID -> {title, updated, tags})
+    relation_map: 存储依赖关系 (原版ID -> [汉化包信息列表])
     """
     for item in items:
+        # 基础数据提取
+        item_id = str(item.get('publishedfileid'))
         title = item.get('title', '')
+        updated = item.get('time_updated', 0)
+        tags = item.get('tags', [])
         
-        # 1. 标题筛选：必须包含中文关键词
-        if not is_valid_translation(item):
+        # 1. 【核心修改】记录该 Mod 的信息到查找表 (包含 Tags)
+        # 无论它是原版还是汉化，先存下来，以便后续反查原版信息
+        ref_map[item_id] = {
+            'title': title,
+            'updated': updated,
+            'tags': tags  # 新增：保存原mod的tags
+        }
+        
+        # 2. 汉化包筛选逻辑
+        if not is_translation_mod(title, tags):
             continue
 
-        # 2. 依赖检查：必须有依赖对象 (children)
+        # 3. 依赖检查：必须有依赖对象 (children)
         children = item.get('children', [])
         if not children:
             continue
         
-        # 提取汉化包的元数据
+        # 构建汉化包信息对象
         trans_info = {
-            'id': str(item.get('publishedfileid')), # 统一转为字符串
+            'id': item_id,
             'title': title,
-            'tags': item.get('tags', []),
-            'updated': item.get('time_updated', 0),
+            'updated': updated,
             'subs': item.get('subscriptions', 0),
-            'score': item.get('vote_data', {}).get('score', 0)
+            'score': item.get('vote_data', {}).get('score', 0),
+            'tags': tags
         }
 
-        # 3. 注册到原版 Mod ID 下
+        # 4. 注册关系
         for child in children:
-            # 这里的 parent_id 是这个汉化包所依赖的原版 Mod ID
             parent_id = str(child.get('publishedfileid'))
-            
-            if parent_id not in dependency_map:
-                dependency_map[parent_id] = []
-            
-            # 将汉化信息加入列表 (此处暂不去重，保留所有候选)
-            dependency_map[parent_id].append(trans_info)
+            # 使用 setdefault 简化逻辑：如果键不存在则创建空列表，然后 append
+            relation_map.setdefault(parent_id, []).append(trans_info)
 
 def main():
-    # 结果字典: { '原版ModID': [汉化包Info1, 汉化包Info2, ...] }
-    global_map = {}
+    global_ref_map = {}      # ID -> Info
+    global_relation_map = {} # ParentID -> [Translation Mods]
     
-    # 获取所有json文件
     json_files = glob.glob(os.path.join(INPUT_FOLDER, '*.json'))
     
     if not json_files:
@@ -86,42 +89,60 @@ def main():
 
     print(f"找到 {len(json_files)} 个文件，开始处理...")
 
-    count = 0
-    for file_path in json_files:
-        count += 1
-        print(f"[{count}/{len(json_files)}] 读取文件: {os.path.basename(file_path)}")
-        
+    for idx, file_path in enumerate(json_files, 1):
+        print(f"[{idx}/{len(json_files)}] 读取: {os.path.basename(file_path)}")
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                
-                # 确保读取的是列表
                 if isinstance(data, list):
-                    process_chunk_items(data, global_map)
-                else:
-                    print(f"警告: 文件 {file_path} 格式不正确(不是列表)，跳过。")
-                    
+                    process_chunk_items(data, global_ref_map, global_relation_map)
         except Exception as e:
-            print(f"读取 {file_path} 时出错: {e}")
+            print(f"读取 {file_path} 失败: {e}")
+
+    # ================= 数据合并阶段 =================
+    print("\n正在合并原版Mod信息 (Title, Updated, Tags)...")
+    
+    final_output = {}
+    
+    # 遍历关系表，反查 ref_map 补全原版信息
+    for parent_id, trans_list in global_relation_map.items():
+        parent_info = global_ref_map.get(parent_id)
+        
+        if parent_info:
+            final_output[parent_id] = {
+                "title": parent_info['title'],
+                "updated": parent_info['updated'],
+                "tags": parent_info['tags'],  # 新增：输出原版tags
+                "translations": trans_list
+            }
+        else:
+            # 原版 Mod ID 存在于依赖关系中，但未在数据集中找到 (可能已删除或未爬取)
+            final_output[parent_id] = {
+                "title": "Unknown Original Mod",
+                "updated": 0,
+                "tags": [],
+                "translations": trans_list
+            }
 
     # 统计信息
-    original_mod_count = len(global_map)
-    translation_mod_count = sum(len(v) for v in global_map.values())
+    mod_count = len(final_output)
+    translation_count = sum(len(v['translations']) for v in final_output.values())
     
-    print(f"\n处理完成！")
-    print(f"共索引了 {original_mod_count} 个原版Mod的汉化关系。")
-    print(f"累计找到 {translation_mod_count} 个候选汉化项。")
+    print(f"处理完成！")
+    print(f"原Mod数量: {mod_count}")
+    print(f"汉化包数量: {translation_count}")
 
     # 写入文件
-    print(f"正在写入结果到 {OUTPUT_FILE} ...")
-    with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
-        json.dump(global_map, f, ensure_ascii=False, indent=2)
-    
-    print("完成。")
+    print(f"正在写入 {OUTPUT_FILE} ...")
+    try:
+        with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
+            json.dump(final_output, f, ensure_ascii=False, indent=2)
+        print("完成。")
+    except Exception as e:
+        print(f"写入文件失败: {e}")
 
 if __name__ == '__main__':
-    # 确保输入目录存在
     if not os.path.exists(INPUT_FOLDER):
-        print(f"提示：请创建文件夹 '{INPUT_FOLDER}' 并放入分块json文件，或者修改脚本中的 INPUT_FOLDER 变量。")
+        print(f"提示：请确保文件夹 '{INPUT_FOLDER}' 存在。")
     else:
         main()
